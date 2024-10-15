@@ -2,7 +2,11 @@
  * Constantes e definições comuns para o transmissor e receptor.
  */
 
-#define RF_FREQUENCY 868000000
+#define OLED_SDA 17
+#define OLED_SCL 18
+#define OLED_RST 21
+
+#define RF_FREQUENCY 915000000
 
 // Determina a potência da transmissão em dBm [https://www.thethingsnetwork.org/docs/lorawan/modulation-data-rate/]
 #define TX_OUTPUT_POWER 15
@@ -43,8 +47,14 @@
 #define PROTO_VERSION 0
 
 typedef enum {
+    // (t -> r) Configura o receptor para receber determinada dimensão de imagem (3 bytes).
     kConfig,
-    KData,
+
+    // (r -> t) Avisa o transmissor que a configuração foi aceita (0 bytes).
+    kAck,
+
+    // (t -> r) Dado da imagem.
+    kData,
 } packet_type_t;
 
 typedef struct {
