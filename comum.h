@@ -2,13 +2,21 @@
  * Constantes e definições comuns para o transmissor e receptor.
  */
 
+#include <cstdint>
+#include <cstring>
+
+// Pinagem da placa Heltec WiFi LoRa 32 (V3)
+
 #define OLED_SDA 17
 #define OLED_SCL 18
 #define OLED_RST 21
 
+#define BUTTON 8 // GPIO0
+
 #define RF_FREQUENCY 915000000
 
-// Determina a potência da transmissão em dBm [https://www.thethingsnetwork.org/docs/lorawan/modulation-data-rate/]
+// Determina a potência da transmissão em dBm
+// [https://www.thethingsnetwork.org/docs/lorawan/modulation-data-rate/]
 #define TX_OUTPUT_POWER 15
 
 // Determina o canal de banda larga utilizado.
@@ -18,11 +26,13 @@
 // [ 3 -> Reservado ]
 #define LORA_BANDWIDTH 0
 
-// Afeta o tempo usado para transmitir cada símbolo (SF7..SF12) [https://www.thethingsnetwork.org/docs/lorawan/spreading-factors/]
+// Afeta o tempo usado para transmitir cada símbolo (SF7..SF12)
+// [https://www.thethingsnetwork.org/docs/lorawan/spreading-factors/]
 #define LORA_SPREADING_FACTOR 7
 
-// Determina a proporção entre os dados codificados em cada pacote e a quantidade de
-// dados de correção de erro adicionados.
+// Determina a proporção entre os dados codificados em cada pacote e a
+// quantidade de dados de correção de erro adicionados.
+//
 // [ 1 -> 4/5 ]
 // [ 2 -> 4/6 ]
 // [ 3 -> 4/7 ]
@@ -44,26 +54,198 @@
 // Tamanho do buffer usado para armazenar a imagem final.
 #define BUFFER_SIZE (OLED_WIDTH * OLED_HEIGHT / 8)
 
-#define PROTO_VERSION 0
+// Tamanho máximo do payload num pacote LoRa
+#define MAX_PAYLOAD_SIZE 255
 
-typedef enum {
-    // (t -> r) Configura o receptor para receber determinada dimensão de imagem (3 bytes).
-    kConfig,
+// Pacote enviado pelo transmissor para anunciar sua presença.
+class broadcast_t {
+  public:
+    // Armazena este pacote em um payload e retorna quantos bytes foram
+    // escritos.
+    //
+    // O buffer passado deve ter no mínimo `sizeof(broadcast_t) + 1` bytes.
+    uint8_t toPayload(char *dest) {
+        dest[0] = 0;
+        memcpy(dest + 1, this, sizeof(broadcast_t));
 
-    // (r -> t) Avisa o transmissor que a configuração foi aceita (0 bytes).
-    kAck,
+        return sizeof(broadcast_t) + 1;
+    }
 
-    // (t -> r) Dado da imagem.
-    kData,
-} packet_type_t;
+    // Inicializa o `broadcast_t` a partir de um payload recebido.
+    // Retorna `false` caso o payload não seja um `broadcast_t` válido.
+    bool fromPayload(const char *payload, uint16_t size) {
+        if (size != sizeof(broadcast_t) + 1 || payload[0] != 0) {
+            return false;
+        }
 
-typedef struct {
-    // Versão do protocolo, deve ser igual a `PROTO_VERSION`.
-    uint8_t version;
+        memcpy(&this->name, payload + 1, size - 1);
 
-    // Comprimento da imagem a ser transmitida.
+        return true;
+    }
+
+    // Nome único do transmissor.
+    uint32_t name;
+
+    // Comprimento da imagem a ser transmitida/recebida.
     uint8_t width;
 
-    // Altura da imagem a ser transmitida.
+    /// Altura da imagem a ser transmitida/recebida.
     uint8_t height;
-} packet_config_t;
+};
+
+class image_data_t {
+  public:
+    // Armazena este pacote em um payload e retorna quantos bytes foram
+    // escritos. Caso o tamanho do pedaço da imagem seja maior que o máximo
+    // transmissível pelo LoRa, apenas parte da imagem será transmitida.
+    // Use `toPayloadAutoOffset` para utilizar contínuamente.
+    //
+    // O buffer passado deve ter no mínimo `min(length, 248) + 6` bytes.
+    uint8_t toPayload(char *dest) {
+        uint8_t length = this->length < MAX_PAYLOAD_SIZE - 6
+                             ? this->length
+                             : MAX_PAYLOAD_SIZE - 6;
+
+        memcpy(dest, this, 6);
+        memcpy(dest + 6, this->data, length);
+
+        return length + 6;
+    }
+
+    // Armazena este pacote em um payload e retorna quantos bytes foram
+    // escritos. Atualiza o field `offset` automaticamente caso o payload seja
+    // largo demais. Armazena true em `*last` caso o este seja o último pacote
+    // enviado.
+    uint8_t toPayloadAutoOffset(char *dest, bool *last) {
+        uint8_t length = this->length - this->offset;
+
+        length = min(length, MAX_PAYLOAD_SIZE - 6);
+
+        memcpy(dest, this, 6);
+        memcpy(dest + 6, this->data + this->offset, length);
+
+        if (last != NULL)
+            *last = length == (MAX_PAYLOAD_SIZE - 6);
+
+        this->offset += length;
+    }
+
+    // Inicializa o `image_data_t` a partir de um payload recebido.
+    // Retorna `false` caso o payload não seja um `image_data_t` válido.
+    bool fromPayload(const uint8_t *payload, uint16_t size) {
+        // Deve ser no mínimo 6 bytes (cabeçalho).
+        if (size < 6)
+            return false;
+
+        memcpy(&this->name, payload, 6);
+
+        // Nome do transmissor deve ser válido.
+        if (this->name == 0)
+            return false;
+
+        this->data = payload + 6;
+        this->length = size - 6;
+
+        return true;
+    }
+
+    // Nome do transmissor responsável por essa imagem.
+    uint32_t name;
+
+    // A posição inicial de `data` na imagem completa.
+    uint16_t offset;
+
+    // O tamanho da imagem/pedaço de imagem transmitido.
+    const uint8_t *data;
+
+    // Tamanho do buffer `data`, não é transmitido no payload.
+    uint16_t length;
+};
+
+class button_t {
+  public:
+    button_t(uint8_t pin)
+        : start(0), state(bsIdle), buffered(false), pin(pin) {};
+
+    void setup() { pinMode(pin, INPUT); }
+
+    void update() {
+        switch (state) {
+        case bsIdle:
+            // Começar a processar o evento caso o botão seja apertado.
+            if (pressed()) {
+                start = millis();
+                state = bsProcessing;
+            }
+            break;
+        case bsIgnore:
+            // Continuar ignorando o evento até que o botão seja solto.
+            state = pressed() ? bsIgnore : bsIdle;
+            break;
+        case bsProcessing:
+            // Finalizar o processamento caso o botão seja solto.
+            if (!pressed()) {
+                duration = millis() - start;
+                buffered = true;
+                start = 0;
+                state = bsIdle;
+            }
+            break;
+        }
+    }
+
+    // Retorna true caso o botão esteja pressionado.
+    bool pressed() { return digitalRead(pin) == LOW; }
+
+    // Retorna true caso o botão tenha sido pressionado por um curto período de
+    // tempo.
+    bool wasShortPressed() {
+        bool result = buffered && duration < 2000;
+        return (consume(), result);
+    }
+
+    // Retorna true caso o botão tenha sido pressionado por mais de 2 segundos.
+    bool wasLongPressed() {
+        if (state == bsIgnore)
+            return false;
+
+        if (buffered)
+            return (consume(), duration >= 2000);
+
+        // Ignorar resultado caso os 2 segundos passem sem que o usuário solte o
+        // botão.
+        bool result = millis() - start >= 2000;
+
+        if (result)
+            state = bsIgnore;
+
+        return result;
+    }
+
+    void consume() { buffered = false; }
+
+  private:
+    uint8_t pin;
+    uint32_t start;
+    uint32_t duration;
+    bool buffered;
+
+    enum {
+        bsIdle,
+        bsProcessing,
+        bsIgnore,
+    } state;
+};
+
+// Converte um nome de um peer para uma string ASCII.
+// O buffer passado deve ter no mínimo 8 bytes.
+const char *hexName(char *dest, uint32_t name) {
+    const char alphabet[] = {'0', '1', '2', '3', '4', '5', '6', '7',
+                             '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+
+    // Insere cada digito hexadecimal no buffer, ao contrário
+    for (uint8_t i = 0; i < 8; i++) {
+        dest[7 - i] = alphabet[name & 0xF];
+        name >>= 4;
+    }
+}
