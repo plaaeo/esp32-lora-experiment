@@ -11,7 +11,7 @@ button_t button(BUTTON);
 Adafruit_SSD1306 Oled(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RST);
 
 // Usado para esperar o fim do recebimento de um pacote.
-bool canRx = false;
+bool canRx = true;
 
 // Usado para armazenar a imagem final.
 uint8_t buffer[BUFFER_SIZE];
@@ -20,7 +20,7 @@ uint8_t buffer[BUFFER_SIZE];
 broadcast_t msgBroadcast{0, 0, 0};
 image_data_t msgImage{0, 0, NULL, 0};
 
-enum { sIdle, sListening, sReceiving } state = sIdle;
+enum { sIdle, sListening, sReceiving } state = sListening;
 
 void setup() {
     Serial.begin(115200);
@@ -82,9 +82,6 @@ void purgeRecords() {
             Serial.printf("(transmissor %x removido)\n", record->latest.name);
             record->latest.name = 0;
             invalidated++;
-
-            if (selectedRecord == pivot)
-                selectedRecord--;
         }
     }
 
@@ -157,6 +154,8 @@ void loop() {
         if (state == sListening) {
             msgBroadcast = records[selectedRecord].latest;
             state = sReceiving;
+            
+            msgImage.length = msgBroadcast.width * msgBroadcast.height / 8;
             // Mostrar/ocultar a imagem sendo recebida do transmissor
         } else if (state == sReceiving) {
             showingImage = !showingImage;
@@ -185,25 +184,27 @@ void loop() {
 
     // Desenhar status do dispositivo
     Oled.clearDisplay();
+    Oled.setTextColor(WHITE);
 
+    int16_t x, y;
+    uint16_t w, h;
     switch (state) {
     case sReceiving:
         if (showingImage) {
             // Desenhar bitmap da imagem sendo recebida no centro do OLED
             Oled.drawBitmap((OLED_WIDTH - msgBroadcast.width) / 2,
                             (OLED_HEIGHT - msgBroadcast.height) / 2, buffer,
-                            msgBroadcast.width, msgBroadcast.height);
+                            msgBroadcast.width, msgBroadcast.height, WHITE);
         } else {
             // Desenhar status do dispositivo
             char nome[] = "Recebendo de 00000000";
             hexName(nome + 13, msgBroadcast.name);
 
-            int16_t x, y, w, h;
             Oled.getTextBounds(nome, 0, 0, &x, &y, &w, &h);
             Oled.setCursor((OLED_WIDTH - w) / 2, (OLED_HEIGHT - h) / 2);
             Oled.println(nome);
 
-            const char label[256];
+            char label[256];
             sprintf(label, "%d/%d bytes", msgImage.offset, msgImage.length);
 
             Oled.getTextBounds(label, 0, 0, &x, &y, &w, &h);
@@ -213,36 +214,33 @@ void loop() {
         break;
 
     case sListening:
-        Oled.setCursor(2, 2);
-        Oled.println("Dispositivo receptor");
-
-        Oled.setCursor(12, 10);
-        Oled.println("Transmissores disponiveis:");
+        const char* titulo = "Transmissores";
+        Oled.getTextBounds(titulo, 0, 0, &x, &y, &w, &h);
+        Oled.setCursor((OLED_WIDTH - w) / 2, 0);
+        Oled.println(titulo);
 
         for (uint8_t i = 0; i < recordsLength; i++) {
             broadcast_t *broadcast = &records[i].latest;
 
-            uint16_t y = 18 + i * 8;
+            uint16_t yOff = (i + 1) * 8;
 
             // Destacar transmissor selecionado
             if (i == selectedRecord) {
-                Oled.drawRect(0, y, OLED_WIDTH, y + 8, WHITE);
+                Oled.fillRect(0, yOff, OLED_WIDTH, 8, WHITE);
                 Oled.setTextColor(BLACK);
             } else {
                 Oled.setTextColor(WHITE);
             }
 
-            Oled.setCursor(12, y);
+            Oled.setCursor(2, yOff);
             Oled.printf("%x", broadcast->name);
 
             // Imprimir dimensão da imagem na direita
-            int16_t x, y, w, h;
-
-            const char label[64];
+            char label[64];
             sprintf(label, "(%dx%d)", broadcast->width, broadcast->height);
 
             Oled.getTextBounds(label, 0, 0, &x, &y, &w, &h);
-            Oled.setCursor(OLED_WIDTH - w - 2, y);
+            Oled.setCursor(OLED_WIDTH - w - 2, yOff);
             Oled.println(label);
         }
         break;
@@ -261,7 +259,7 @@ void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
     Serial.printf("recebido! %d bytes\n", size);
 
     switch (state) {
-    case sListening:
+    case sListening: {
         broadcast_t msg{0, 0, 0};
 
         // Gravar broadcasts válidos recebidos
@@ -271,18 +269,22 @@ void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
             Serial.println("Broadcast invalido recebido!");
         }
         break;
+    }
 
-    case sReceiving:
+    case sReceiving: {
         image_data_t msg{0, 0, NULL, 0};
 
         if (msg.fromPayload(payload, size)) {
+            msgImage.offset = msg.offset + msg.length;
+
             // Limitar tamanho copiado para evitar buffer overflow
-            uint8_t length = min(msg.length, BUFFER_SIZE - msg.offset);
+            uint16_t length = std::min<uint16_t>(msg.length, BUFFER_SIZE - msg.offset);
             memcpy(buffer + msg.offset, msg.data, length);
         } else {
             Serial.println("Imagem invalida recebida!");
         }
         break;
+    }
     }
 
     Radio.Sleep();

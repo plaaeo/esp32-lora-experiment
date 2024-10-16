@@ -2,8 +2,8 @@
  * Constantes e definições comuns para o transmissor e receptor.
  */
 
-#include <cstdint>
-#include <cstring>
+// #include <cstdint>
+// #include <cstring>
 
 // Pinagem da placa Heltec WiFi LoRa 32 (V3)
 
@@ -11,7 +11,7 @@
 #define OLED_SCL 18
 #define OLED_RST 21
 
-#define BUTTON 8 // GPIO0
+#define BUTTON GPIO_NUM_0
 
 #define RF_FREQUENCY 915000000
 
@@ -64,7 +64,7 @@ class broadcast_t {
     // escritos.
     //
     // O buffer passado deve ter no mínimo `sizeof(broadcast_t) + 1` bytes.
-    uint8_t toPayload(char *dest) {
+    uint8_t toPayload(uint8_t *dest) {
         dest[0] = 0;
         memcpy(dest + 1, this, sizeof(broadcast_t));
 
@@ -73,7 +73,7 @@ class broadcast_t {
 
     // Inicializa o `broadcast_t` a partir de um payload recebido.
     // Retorna `false` caso o payload não seja um `broadcast_t` válido.
-    bool fromPayload(const char *payload, uint16_t size) {
+    bool fromPayload(const uint8_t *payload, uint16_t size) {
         if (size != sizeof(broadcast_t) + 1 || payload[0] != 0) {
             return false;
         }
@@ -101,10 +101,8 @@ class image_data_t {
     // Use `toPayloadAutoOffset` para utilizar contínuamente.
     //
     // O buffer passado deve ter no mínimo `min(length, 248) + 6` bytes.
-    uint8_t toPayload(char *dest) {
-        uint8_t length = this->length < MAX_PAYLOAD_SIZE - 6
-                             ? this->length
-                             : MAX_PAYLOAD_SIZE - 6;
+    uint8_t toPayload(uint8_t *dest) {
+        uint16_t length = std::min<uint16_t>(length, MAX_PAYLOAD_SIZE - 6);
 
         memcpy(dest, this, 6);
         memcpy(dest + 6, this->data, length);
@@ -116,18 +114,20 @@ class image_data_t {
     // escritos. Atualiza o field `offset` automaticamente caso o payload seja
     // largo demais. Armazena true em `*last` caso o este seja o último pacote
     // enviado.
-    uint8_t toPayloadAutoOffset(char *dest, bool *last) {
-        uint8_t length = this->length - this->offset;
+    uint8_t toPayloadAutoOffset(uint8_t *dest, bool *last) {
+        uint16_t length = this->length - this->offset;
 
-        length = min(length, MAX_PAYLOAD_SIZE - 6);
+        length = std::min<uint16_t>(length, MAX_PAYLOAD_SIZE - 6);
 
         memcpy(dest, this, 6);
         memcpy(dest + 6, this->data + this->offset, length);
 
         if (last != NULL)
-            *last = length == (MAX_PAYLOAD_SIZE - 6);
+            *last = length < (MAX_PAYLOAD_SIZE - 6);
 
         this->offset += length;
+
+        return length + 6;
     }
 
     // Inicializa o `image_data_t` a partir de um payload recebido.
@@ -167,7 +167,7 @@ class button_t {
     button_t(uint8_t pin)
         : start(0), state(bsIdle), buffered(false), pin(pin) {};
 
-    void setup() { pinMode(pin, INPUT); }
+    void setup() { pinMode(pin, INPUT_PULLUP); }
 
     void update() {
         switch (state) {
@@ -206,7 +206,7 @@ class button_t {
 
     // Retorna true caso o botão tenha sido pressionado por mais de 2 segundos.
     bool wasLongPressed() {
-        if (state == bsIgnore)
+        if (state == bsIgnore || state == bsIdle)
             return false;
 
         if (buffered)
@@ -239,7 +239,7 @@ class button_t {
 
 // Converte um nome de um peer para uma string ASCII.
 // O buffer passado deve ter no mínimo 8 bytes.
-const char *hexName(char *dest, uint32_t name) {
+void hexName(char *dest, uint32_t name) {
     const char alphabet[] = {'0', '1', '2', '3', '4', '5', '6', '7',
                              '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
