@@ -7,8 +7,6 @@
 #include <Wire.h>
 #include <esp_random.h>
 
-#define STRINGIFY(...) #__VA_ARGS__
-
 // Define a imagem a ser transmitida, seu comprimento (w) e altura (h)
 #define IMAGEM logoUfam
 #define IMAGEM_W 128
@@ -99,7 +97,7 @@ bool enviarImagem() {
 
     // Reseta o offset da imagem enviada para reenviá-la
     if (wasLastPacket) {
-      // sgImage.offset = 0;
+        // sgImage.offset = 0;
     }
 
     static uint8_t payload[MAX_PAYLOAD_SIZE];
@@ -169,7 +167,8 @@ void loop() {
     case sTransmitting: {
         char label[256];
 
-        sprintf(label, "(transmitindo, %dx%d)", msgBroadcast.width, msgBroadcast.height);
+        sprintf(label, "(transmitindo, %dx%d)", msgBroadcast.width,
+                msgBroadcast.height);
 
         Oled.getTextBounds(label, 0, 0, &x, &y, &w, &h);
         Oled.setCursor((OLED_WIDTH - w) / 2, (OLED_HEIGHT + h) / 2);
