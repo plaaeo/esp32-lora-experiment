@@ -52,9 +52,6 @@
 #define OLED_WIDTH 128
 #define OLED_HEIGHT 64
 
-// Tamanho do buffer usado para armazenar a imagem final.
-#define BUFFER_SIZE (OLED_WIDTH * OLED_HEIGHT / 8)
-
 // Tamanho máximo do payload num pacote LoRa
 #define MAX_PAYLOAD_SIZE 255
 
@@ -78,7 +75,8 @@ public:
     // Inicializa o `broadcast_t` a partir de um payload recebido.
     // Retorna `false` caso o payload não seja um `broadcast_t` válido.
     bool fromPayload(const uint8_t *payload, uint16_t size) {
-        if (size != sizeof(broadcast_t) + 4 || strncmp((const char*) payload, "TEP6", 4) != 0) {
+        if (size != sizeof(broadcast_t) + 4 ||
+            strncmp((const char *)payload, "TEP6", 4) != 0) {
             return false;
         }
 
@@ -143,14 +141,14 @@ public:
             return false;
 
         state = bsHolding;
-    
+
         uint32_t duration = millis() - start;
 
         if (duration >= LONG_PRESS_DURATION) {
             start += duration;
             return true;
         }
-        
+
         return false;
     }
 
