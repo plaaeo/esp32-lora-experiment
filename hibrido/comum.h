@@ -98,7 +98,7 @@ public:
 class button_t {
 public:
     button_t(uint8_t pin)
-        : start(0), state(bsIdle), buffered(false), pin(pin) {};
+        : start(0), duration(0), state(bsIdle), buffered(false), pin(pin) {};
 
     void setup() {
         pinMode(pin, INPUT_PULLUP);
@@ -137,14 +137,14 @@ public:
 
     // Retorna true caso o botão esteja sendo segurado.
     bool holding() {
-        if (state != bsProcessing || !pressed())
+        if (!pressed() || (state != bsProcessing && state != bsHolding))
             return false;
 
-        state = bsHolding;
 
         uint32_t duration = millis() - start;
 
         if (duration >= LONG_PRESS_DURATION) {
+            state = bsHolding;
             start += duration;
             return true;
         }

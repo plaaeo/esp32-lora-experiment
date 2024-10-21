@@ -1,12 +1,13 @@
+#include "comum.h"
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <LoRaWan_APP.h>
 #include <Wire.h>
 #include <cstdio>
 #include <esp_random.h>
-#include <heltec.h>
 
-#include "comum.h"
+#define MAX_RECORDS 32
 
 button_t button(BUTTON);
 
@@ -25,7 +26,6 @@ float currentTemperature = 0.0f;
 // Código específico para o receptor, que não se encaixa nos outros namespaces
 // abaixo
 namespace rx {
-#define MAX_RECORDS 32
 
     struct record_t {
         // Contem o ultimo broadcast deste transmissor.
@@ -143,7 +143,7 @@ namespace lora {
 
     // Inicializa o radio LoRa
     void setup() {
-        static RadioEvents events;
+        static RadioEvents_t events;
 
         events.RxDone = OnRxDone;
         events.TxDone = OnTxDone;
@@ -274,10 +274,10 @@ namespace gui {
 
     void prepareDrawItem(int16_t y, bool selected) {
         if (selected) {
-            Oled.fillRect(0, y, OLED_WIDTH, 8, WHITE);
-            Oled.setTextColor(BLACK);
+            oled.fillRect(0, y, OLED_WIDTH, 8, WHITE);
+            oled.setTextColor(BLACK);
         } else {
-            Oled.setTextColor(WHITE);
+            oled.setTextColor(WHITE);
         }
     }
 
@@ -317,10 +317,10 @@ namespace gui {
 
         // Desenhar menu
         prepareDrawItem(8, isSettingsSelected);
-        drawAlignedText("\xa2 Configura\x78\x38o", 2, 8);
+        drawAlignedText("\x2a Configura\x87\x83o", 2, 8);
 
         for (uint8_t i = 0; i < rx::recordsLength; i++) {
-            broadcast_t *broadcast = &records[i].latest;
+            broadcast_t *broadcast = &rx::records[i].latest;
 
             // Imprimir caixa de seleção
             uint16_t yOff = (i + 2) * 8;
@@ -344,6 +344,9 @@ namespace gui {
     void stateTransmitterMain() {
     }
 
+    void stateReceiverInfo() {
+    }
+
     void stateSettings() {
         struct setting_t {
             const char *label;
@@ -360,12 +363,12 @@ namespace gui {
             {
                 "Cargo",
                 [](char *dst) {
-                    sprintf(dst, lora::role == kReceiver ? "Receptor"
+                    sprintf(dst, lora::role == lora::kReceiver ? "Receptor"
                                                          : "Transmissor");
                 },
                 []() {
                     lora::role =
-                        lora::role == kReceiver ? kTransmitter : kReceiver;
+                        lora::role == lora::kReceiver ? lora::kTransmitter : lora::kReceiver;
                 },
             },
             {
@@ -426,7 +429,7 @@ namespace gui {
                 "\xb1 Voltar",
                 [](char *dst) {},
                 []() {
-                    stateFn = lora::role == kReceiver ? stateReceiverMain
+                    stateFn = lora::role == lora::kReceiver ? stateReceiverMain
                                                       : stateTransmitterMain;
                 },
             },
@@ -455,10 +458,10 @@ namespace gui {
 
         uint16_t yOff = 8;
         for (uint8_t i = startSetting; i < settingsLength - startSetting; i++) {
-            if (i == 2 && lora::role == kReceiver)
+            if (i == 2 && lora::role == lora::kReceiver)
                 continue;
 
-            setting_t *setting = &settings[i];
+            const setting_t *setting = &settings[i];
 
             // Imprimir caixa de seleção
             prepareDrawItem(yOff, i == selectedSetting);
@@ -472,34 +475,34 @@ namespace gui {
             yOff += 8;
         }
     }
-} // namespace gui
 
-// Inicializa o módulo OLED
-void setup() {
-    stateFn = lora::role == lora::kReceiver ? stateReceiverMain
-                                            : stateTransmitterMain;
+    // Inicializa o módulo OLED
+    void setup() {
+        stateFn = lora::role == lora::kReceiver ? stateReceiverMain
+                                                : stateTransmitterMain;
 
-    Wire.begin(OLED_SDA, OLED_SCL);
+        Wire.begin(OLED_SDA, OLED_SCL);
 
-    if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3c, true, false)) {
-        Serial.println("Falha na inicializacao do OLED");
+        if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3c, true, false)) {
+            Serial.println("Falha na inicializacao do OLED");
 
-        while (true) {
-        };
+            while (true) {
+            };
+        }
+
+        oled.setRotation(2);
     }
 
-    oled.setRotation(180);
-}
+    // Atualiza o estado da interface
+    void update() {
+        oled.clearDisplay();
+        oled.setTextColor(WHITE);
 
-// Atualiza o estado da interface
-void update() {
-    display.clearDisplay();
+        if (stateFn)
+            stateFn();
 
-    if (stateFn)
-        stateFn();
-
-    display.display();
-}
+        oled.display();
+    }
 } // namespace gui
 
 void setup() {
