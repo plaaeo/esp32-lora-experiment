@@ -7,7 +7,27 @@
 #include <Wire.h>
 #include <esp_random.h>
 
-#define STRINGIFY(...) #__VA_ARGS__
+#define SENSOR_TEMP 18
+
+float steinhart(int Vo, float A, float B, float C) {
+  Serial.printf("%d\n", Vo);
+
+  float Resistance = (40960000 / (float)Vo) - 10000; // for pull-up configuration
+  float R2 = Resistance;
+  
+  float logR2 = log(R2); // Pre-Calcul for Log(R2)
+  float T = (1.0 / (A + B * logR2 + C * logR2 * logR2 * logR2)); 
+  T = T - 273.15; // convert Kelvin to °C
+  
+  return T;
+}
+
+float readThermistor() {
+  int Vo = analogRead(SENSOR_TEMP);
+  // float temperatura = steinhart(Vo, 2.198064079e-3, 0.7738933847e-4, 5.149159750e-7);
+  float temperatura = steinhart(Vo, 0.001129148, 0.000234125, 0.0000000876741);
+  return temperatura;
+}
 
 // Define a imagem a ser transmitida, seu comprimento (w) e altura (h)
 #define IMAGEM logoUfam
@@ -28,7 +48,7 @@ enum { sIdle, sBroadcasting, sTransmitting } state = sIdle;
 
 // Inicializa o pacote de broadcast com um nome aleatório e as dimensões da
 // imagem inicial.
-broadcast_t msgBroadcast{esp_random(), IMAGEM_W, IMAGEM_H};
+broadcast_t msgBroadcast{esp_random(), 0, 0, IMAGEM_W, IMAGEM_H};
 
 // Inicializa o pacote de imagem com os dados relevantes a imagem.
 image_data_t msgImage{msgBroadcast.name, 0, IMAGEM, sizeof(IMAGEM)};
@@ -36,6 +56,8 @@ image_data_t msgImage{msgBroadcast.name, 0, IMAGEM, sizeof(IMAGEM)};
 void setup() {
     Serial.begin(115200);
     Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
+
+    analogReadResolution(12);
 
     // Configura o botão PRG
     button.setup();
@@ -51,6 +73,7 @@ void setup() {
 
     Oled.clearDisplay();
     Oled.setTextColor(WHITE);
+    Oled.setRotation(2);
 
     // Inicializar radio LoRa
     static RadioEvents_t RadioEvents;
@@ -77,6 +100,8 @@ bool enviarBroadcast() {
     }
 
     static uint8_t payload[sizeof(broadcast_t) + 1];
+    
+    msgBroadcast.temperature = readThermistor();
 
     uint8_t length = msgBroadcast.toPayload(payload);
     Serial.printf("Enviando broadcast (%d bytes)... ", length);
@@ -99,7 +124,7 @@ bool enviarImagem() {
 
     // Reseta o offset da imagem enviada para reenviá-la
     if (wasLastPacket) {
-      // sgImage.offset = 0;
+        // sgImage.offset = 0;
     }
 
     static uint8_t payload[MAX_PAYLOAD_SIZE];
@@ -169,7 +194,8 @@ void loop() {
     case sTransmitting: {
         char label[256];
 
-        sprintf(label, "(transmitindo, %dx%d)", msgBroadcast.width, msgBroadcast.height);
+        sprintf(label, "(transmitindo, %dx%d)", msgBroadcast.width,
+                msgBroadcast.height);
 
         Oled.getTextBounds(label, 0, 0, &x, &y, &w, &h);
         Oled.setCursor((OLED_WIDTH - w) / 2, (OLED_HEIGHT + h) / 2);

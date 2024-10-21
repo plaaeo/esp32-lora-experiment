@@ -57,9 +57,12 @@
 // Tamanho máximo do payload num pacote LoRa
 #define MAX_PAYLOAD_SIZE 255
 
+// Define a duração em millisegundos de um pressionamento longo em um botão
+#define LONG_PRESS_DURATION 300
+
 // Pacote enviado pelo transmissor para anunciar sua presença.
 class broadcast_t {
-  public:
+public:
     // Armazena este pacote em um payload e retorna quantos bytes foram
     // escritos.
     //
@@ -85,6 +88,9 @@ class broadcast_t {
 
     // Nome único do transmissor.
     uint32_t name;
+    
+    float waterLevel;
+    float temperature;
 
     // Comprimento da imagem a ser transmitida/recebida.
     uint8_t width;
@@ -94,7 +100,7 @@ class broadcast_t {
 };
 
 class image_data_t {
-  public:
+public:
     // Armazena este pacote em um payload e retorna quantos bytes foram
     // escritos. Caso o tamanho do pedaço da imagem seja maior que o máximo
     // transmissível pelo LoRa, apenas parte da imagem será transmitida.
@@ -163,11 +169,13 @@ class image_data_t {
 };
 
 class button_t {
-  public:
+public:
     button_t(uint8_t pin)
         : start(0), state(bsIdle), buffered(false), pin(pin) {};
 
-    void setup() { pinMode(pin, INPUT_PULLUP); }
+    void setup() {
+        pinMode(pin, INPUT_PULLUP);
+    }
 
     void update() {
         switch (state) {
@@ -195,12 +203,14 @@ class button_t {
     }
 
     // Retorna true caso o botão esteja pressionado.
-    bool pressed() { return digitalRead(pin) == LOW; }
+    bool pressed() {
+        return digitalRead(pin) == LOW;
+    }
 
     // Retorna true caso o botão tenha sido pressionado por um curto período de
     // tempo.
     bool wasShortPressed() {
-        bool result = buffered && duration < 2000;
+        bool result = buffered && duration < LONG_PRESS_DURATION;
         return (consume(), result);
     }
 
@@ -210,11 +220,11 @@ class button_t {
             return false;
 
         if (buffered)
-            return (consume(), duration >= 2000);
+            return (consume(), duration >= LONG_PRESS_DURATION);
 
         // Ignorar resultado caso os 2 segundos passem sem que o usuário solte o
         // botão.
-        bool result = millis() - start >= 2000;
+        bool result = millis() - start >= LONG_PRESS_DURATION;
 
         if (result)
             state = bsIgnore;
@@ -222,9 +232,11 @@ class button_t {
         return result;
     }
 
-    void consume() { buffered = false; }
+    void consume() {
+        buffered = false;
+    }
 
-  private:
+private:
     uint8_t pin;
     uint32_t start;
     uint32_t duration;

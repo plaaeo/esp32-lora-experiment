@@ -17,7 +17,7 @@ bool canRx = true;
 uint8_t buffer[BUFFER_SIZE];
 
 // Contem a mensagem de broadcast do transmissor escolhido.
-broadcast_t msgBroadcast{0, 0, 0};
+broadcast_t msgBroadcast{0, 0, 0, 0, 0};
 image_data_t msgImage{0, 0, NULL, 0};
 
 enum { sIdle, sListening, sReceiving } state = sListening;
@@ -40,6 +40,7 @@ void setup() {
 
     Oled.clearDisplay();
     Oled.setTextColor(WHITE);
+    Oled.setRotation(2);
 
     // Inicializar radio LoRa
     static RadioEvents_t RadioEvents;
@@ -148,6 +149,10 @@ void loop() {
     static bool showingImage = false;
 
     button.update();
+    
+    if (state == sReceiving) {
+        msgBroadcast = records[selectedRecord].latest;
+    }
 
     if (button.wasShortPressed()) {
         // Começar a receber a imagem ao selecionar um transmissor
@@ -205,7 +210,7 @@ void loop() {
             Oled.println(nome);
 
             char label[256];
-            sprintf(label, "%d/%d bytes", msgImage.offset, msgImage.length);
+            sprintf(label, "%.1f C / %.1 m", msgBroadcast.temperature, msgBroadcast.waterLevel);
 
             Oled.getTextBounds(label, 0, 0, &x, &y, &w, &h);
             Oled.setCursor((OLED_WIDTH - w) / 2, (OLED_HEIGHT / 2) + h);
@@ -259,6 +264,7 @@ void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
     Serial.printf("recebido! %d bytes\n", size);
 
     switch (state) {
+    case sReceiving:
     case sListening: {
         broadcast_t msg{0, 0, 0};
 
@@ -271,6 +277,7 @@ void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
         break;
     }
 
+    /*
     case sReceiving: {
         image_data_t msg{0, 0, NULL, 0};
 
@@ -285,6 +292,7 @@ void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
         }
         break;
     }
+    */
     }
 
     Radio.Sleep();
