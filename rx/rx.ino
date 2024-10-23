@@ -210,7 +210,7 @@ void loop() {
             Oled.println(nome);
 
             char label[256];
-            sprintf(label, "%.1f C / %.1 m", msgBroadcast.temperature, msgBroadcast.waterLevel);
+            sprintf(label, "%.1f C / %.1f cm", msgBroadcast.temperature, msgBroadcast.waterLevel);
 
             Oled.getTextBounds(label, 0, 0, &x, &y, &w, &h);
             Oled.setCursor((OLED_WIDTH - w) / 2, (OLED_HEIGHT / 2) + h);

@@ -7,10 +7,11 @@
 #include <Wire.h>
 #include <esp_random.h>
 
-#define SENSOR_TEMP 18
+#define SENSOR_NIVEL GPIO_NUM_2
+#define SENSOR_TEMP GPIO_NUM_5
 
 float steinhart(int Vo, float A, float B, float C) {
-  Serial.printf("%d\n", Vo);
+  Serial.printf("%d ", Vo);
 
   float Resistance = (40960000 / (float)Vo) - 10000; // for pull-up configuration
   float R2 = Resistance;
@@ -24,9 +25,16 @@ float steinhart(int Vo, float A, float B, float C) {
 
 float readThermistor() {
   int Vo = analogRead(SENSOR_TEMP);
+  int nivel = analogRead(SENSOR_NIVEL);
   // float temperatura = steinhart(Vo, 2.198064079e-3, 0.7738933847e-4, 5.149159750e-7);
   float temperatura = steinhart(Vo, 0.001129148, 0.000234125, 0.0000000876741);
+  Serial.printf("%.3f\n", temperatura);
+  Serial.printf("%d\n", nivel);
   return temperatura;
+}
+
+float readWaterLevel() {
+  return 4.2 * analogRead(SENSOR_NIVEL) / 1815; 
 }
 
 // Define a imagem a ser transmitida, seu comprimento (w) e altura (h)
@@ -56,6 +64,7 @@ image_data_t msgImage{msgBroadcast.name, 0, IMAGEM, sizeof(IMAGEM)};
 void setup() {
     Serial.begin(115200);
     Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
+    analogSetAttenuation(ADC_11db);
 
     analogReadResolution(12);
 
@@ -93,14 +102,15 @@ void setup() {
 // Envia o payload broadcast via LoRa.
 bool enviarBroadcast() {
     static uint32_t lastPacket = 0;
-    uint32_t now = millis() + 4000;
+    uint32_t now = millis() + 500;
 
-    if (now - lastPacket < 4000) {
+    if (now - lastPacket < 500) {
         return false;
     }
 
     static uint8_t payload[sizeof(broadcast_t) + 1];
     
+    msgBroadcast.waterLevel = readWaterLevel();
     msgBroadcast.temperature = readThermistor();
 
     uint8_t length = msgBroadcast.toPayload(payload);
